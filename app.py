@@ -28,7 +28,7 @@ def get_location_list_cached(_locode_data):
         return ["--- Loading Error ---"]
     valid_data = [entry for entry in _locode_data if isinstance(entry, dict) and 'DisplayName' in entry]
     location_options = sorted([entry['DisplayName'] for entry in valid_data], key=lambda x: x.split(',')[0].lower())
-    location_options.insert(0, "--- Select Location ---")
+    location_options.insert(0, "Location")
     return location_options
 
 locode_data = load_locode_data_cached()
@@ -59,77 +59,97 @@ def parse_route_coordinates(coord_str):
 
 # --- Sidebar ---
 with st.sidebar:
-    st.image("https://user-images.githubusercontent.com/26688034/269325638-935067ab-38ca-448c-9f68-a41f641541f1.png", width=100)
     st.markdown("### GreenTrade Companion")
-    st.markdown("Enter details to find optimal import routes and view emissions.")
+    st.markdown(
+        """
+        Welcome to GreenTrade Companion! This tool helps you analyze and compare import routes,
+        focusing on both logistical efficiency and environmental sustainability.
+
+        To get started, please follow these steps:
+        1. **Select your Origin and Destination:** Choose the starting and ending points of your import.
+        2. **Specify your Cargo Weight:** Enter the total weight of your shipment in kilograms.
+        3. **Click 'Analyze Routes':** We will then calculate potential routes, estimate distances,
+           and determine the associated carbon emissions and estimated travel times for each option.
+
+        Our goal is to empower you to make informed decisions that optimize your supply chain
+        while minimizing your environmental footprint.
+        """
+    )
     st.markdown("---")
-    
-    st.selectbox(
-        "Origin:",
+
+    st.markdown("**Select Origin and Destination:**")
+    origin_display_name = st.selectbox(
+        "Importing From:",
         options=location_list,
         key='importing_from_select',
-        index=0
+        index=0,
+        help="Choose the starting point of your import. Begin typing to filter locations."
     )
-    st.selectbox(
-        "Destination:",
+    destination_display_name = st.selectbox(
+        "Importing To:",
         options=location_list,
         key='importing_to_select',
-        index=0
+        index=0,
+        help="Choose the final destination of your import. Begin typing to filter locations."
     )
-    st.number_input(
-        "Weight (kg)",
+
+    st.markdown("---")
+    st.markdown("**Specify Cargo Weight:**")
+    weight = st.number_input(
+        "Total Weight (kg):",
         min_value=0.1,
         step=10.0,
         key='total_weight_input',
         value=100.0,
-        format="%.1f"
+        format="%.1f",
+        help="Enter the total weight of your shipment in kilograms. This helps calculate emissions."
     )
+
+    st.markdown("---")
     if st.button("Analyze Routes", key='analyze_btn', use_container_width=True, type="primary"):
         st.session_state.app_analyzed = True
         st.session_state.selected_route_desc = None
         st.session_state.direct_route_data_df = None
-        
-        origin_display_name = st.session_state.get('importing_from_select')
-        dest_display_name = st.session_state.get('importing_to_select')
-        weight = st.session_state.get('total_weight_input', 0)
-        
-        if origin_display_name and origin_display_name != "--- Select Location ---" and \
-           dest_display_name and dest_display_name != "--- Select Location ---" and \
+
+        if origin_display_name and origin_display_name != "Location" and \
+           dest_display_name and dest_display_name != "Location" and \
            weight > 0 and locode_data:
-            
+
             origin_entry = route.find_location_by_display_name(origin_display_name, locode_data)
             dest_entry = route.find_location_by_display_name(dest_display_name, locode_data)
-            
+
             if origin_entry and dest_entry:
                 if origin_display_name == dest_display_name:
                     st.warning("Origin and Destination cannot be the same.")
                     st.session_state.app_analyzed = False
                 else:
-                    with st.spinner("Calculating routes..."):
+                    with st.spinner("Calculating optimal routes..."):
                         calculated_routes = route.calculate_routes_from_locode(
                             origin_entry, dest_entry, weight, locode_data
                         )
                         if calculated_routes:
                             st.session_state.direct_route_data_df = pd.DataFrame(calculated_routes)
-                            # Set default selection to first route
-                            st.session_state.selected_route_desc = st.session_state.direct_route_data_df['Route Desc'].iloc[0]
+                            # Set default selection to first route if available
+                            if not st.session_state.direct_route_data_df.empty:
+                                st.session_state.selected_route_desc = st.session_state.direct_route_data_df['Route Desc'].iloc[0]
                         else:
-                            st.warning("No routes found.")
+                            st.warning("No routes found for the selected locations.")
                             st.session_state.direct_route_data_df = None
             else:
-                st.error("Invalid origin or destination.")
+                st.error("Could not find details for the selected origin or destination.")
                 st.session_state.app_analyzed = False
         else:
-            if not origin_display_name or origin_display_name == "--- Select Location ---":
-                st.warning("Select a valid Origin.")
-            if not dest_display_name or dest_display_name == "--- Select Location ---":
-                st.warning("Select a valid Destination.")
+            st.error("Please ensure all input fields are correctly filled.")
+            if not origin_display_name or origin_display_name == "Select Location":
+                st.info("Select a valid 'Importing From' location. Start typing to search.")
+            if not dest_display_name or dest_display_name == "Select Location":
+                st.info("Select a valid 'Importing To' location. Start typing to search.")
             if not weight > 0:
-                st.warning("Enter a weight greater than 0.")
+                st.info("Enter a 'Total Weight' greater than 0 kg.")
             if not locode_data:
-                st.error("LOCODE data failed to load.")
+                st.error("Error loading location data. Please try again.")
             st.session_state.app_analyzed = False
-        
+
         st.rerun()
 
 # --- Main Area ---
@@ -145,8 +165,8 @@ if should_show_results:
     dest_display_name = st.session_state.get('importing_to_select')
     current_total_weight = st.session_state.get('total_weight_input', 0.0)
     
-    origin_valid = origin_display_name and origin_display_name != "--- Select Location ---"
-    dest_valid = dest_display_name and dest_display_name != "--- Select Location ---"
+    origin_valid = origin_display_name and origin_display_name != "Select Location"
+    dest_valid = dest_display_name and dest_display_name != "Select Location"
     weight_valid = current_total_weight > 0
     
     if not (origin_valid and dest_valid and weight_valid):
